@@ -7,6 +7,10 @@ module.exports = {
     '<rootDir>/test/unit/**/*.(ts|js)',
     '<rootDir>/test/integration/**/*.(ts|js)'
   ],
+  testEnvironment: 'jsdom',
+  testEnvironmentOptions: {
+    customExportConditions: ['node'],
+  },
   transform: {
     '^.+\\.jsx?$': 'babel-jest',
     '^.+\\.tsx?$': 'ts-jest'
@@ -16,11 +20,11 @@ module.exports = {
     // '/node_modules/(?!whatwg-fetch|stanza|xmpp-jid|genesys-cloud-streaming-client).+\\.js$'
   ],
   setupFiles: [
-    '<rootDir>/test/setup.js'
   ],
   collectCoverage: true,
   collectCoverageFrom: [
     '<rootDir>/src/**/*.{js,jsx,ts,tsx}',
+    '!**/headset-types.ts',
     '!**/node_modules/**',
     '!**/types/**'
   ],

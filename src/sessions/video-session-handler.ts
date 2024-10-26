@@ -14,7 +14,7 @@ import {
   IMediaRequestOptions,
   IStartVideoSessionParams,
   VideoMediaSession,
-  IMemberStatusMessage
+  MemberStatusMessage
 } from '../types/interfaces';
 import BaseSessionHandler from './base-session-handler';
 import { SessionTypes, SdkErrorTypes, CommunicationStates } from '../types/enums';
@@ -52,7 +52,7 @@ export interface IMediaChangeEventParticipant {
   }[];
 }
 
-export default class VideoSessionHandler extends BaseSessionHandler {
+export class VideoSessionHandler extends BaseSessionHandler {
   requestedSessions: { [roomJid: string]: boolean } = {};
 
   sessionType = SessionTypes.collaborateVideo;
@@ -603,8 +603,10 @@ export default class VideoSessionHandler extends BaseSessionHandler {
     try {
       this.log('info', 'Starting screen media', { sessionId: session.id, conversationId: session.conversationId, sessionType: session.sessionType });
 
-      const stream = await this.sdk.media.startDisplayMedia();
+      const stream = await this.sdk.media.startDisplayMedia({ conversationId: session.conversationId, sessionId: session.id });
       session._screenShareStream = stream;
+      
+      this.log('info', 'Screen media created', { sessionId: session.id, conversationId: session.conversationId, sessionType: session.sessionType });
 
       await this.addReplaceTrackToSession(session, stream.getVideoTracks()[0]);
 
@@ -753,7 +755,7 @@ export default class VideoSessionHandler extends BaseSessionHandler {
       .find(s => s.startsWith('a=msid:'))?.split(' ')[1]?.trim();
   }
 
-  isMemberStatusMessage (message: JsonRpcMessage): message is IMemberStatusMessage {
+  isMemberStatusMessage (message: JsonRpcMessage): message is MemberStatusMessage {
     return message.method === 'member.notify.status';
   }
 
@@ -765,7 +767,9 @@ export default class VideoSessionHandler extends BaseSessionHandler {
     }
   }
 
-  handleMemberStatusMessage(message: IMemberStatusMessage, session: VideoMediaSession): void {
+  handleMemberStatusMessage(message: MemberStatusMessage, session: VideoMediaSession): void {
     session.emit('memberStatusUpdate', message);
   }
 }
+
+export default VideoSessionHandler;

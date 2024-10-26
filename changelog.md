@@ -3,7 +3,106 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-# [Unreleased](https://github.com/MyPureCloud/genesys-cloud-webrtc-sdk/compare/v8.2.3...HEAD)
+# [Unreleased](https://github.com/MyPureCloud/genesys-cloud-webrtc-sdk/compare/v9.2.4...HEAD)
+# [v9.2.4](https://github.com/MyPureCloud/genesys-cloud-webrtc-sdk/compare/v9.2.3...v9.2.4)
+### Fixed
+* [STREAM-218](https://inindca.atlassian.net/browse/STREAM-218) - bump streaming for priv-auto-answer on session object; dont create a conversation object for priv-auto-answer sessions.
+
+# Added
+* [STREAM-222](https://inindca.atlassian.net/browse/STREAM-222) - Created new SDK demo app using React/Vite.
+
+# [v9.2.3](https://github.com/MyPureCloud/genesys-cloud-webrtc-sdk/compare/v9.2.2...v9.2.3)
+### Changed
+* [NO_JIRA] - Bump client-logger to pick up fixes
+### Fixed
+* [STREAM-178](https://inindca.atlassian.net/browse/STREAM-178) - Dont try and hold session with dead peerConnections; bump streaming-client
+
+# [v9.2.2](https://github.com/MyPureCloud/genesys-cloud-webrtc-sdk/compare/v9.2.1...v9.2.2)
+### Fixed
+* [STREAM-174](https://inindca.atlassian.net/browse/STREAM-174) - Add a null check for conversation state lookup for held.
+* [STREAM-172](https://inindca.atlassian.net/browse/STREAM-172) - Update axios to address Snyk vulnerability
+* [STREAM-191](https://inindca.atlassian.net/browse/STREAM-191) - Fix for slow performance of `pruneConversationUpdateForLogging`
+
+### Changed
+* [STREAM-146](https://inindca.atlassian.net/browse/STREAM-146) - Updated logging for new JSON-RPC commands.
+
+# [v9.2.1](https://github.com/MyPureCloud/genesys-cloud-webrtc-sdk/compare/v9.2.0...v9.2.1)
+### Fixed
+* [STREAM-168](https://inindca.atlassian.net/browse/STREAM-168) - resetHeadsetState should not attempt if headset is not connected - softphone vendor headsets version bump.
+
+# [v9.2.0](https://github.com/MyPureCloud/genesys-cloud-webrtc-sdk/compare/v9.1.2...v9.2.0)
+### Changed
+* [STREAM-71](https://inindca.atlassian.net/browse/STREAM-71) - Support priv-answer-mode auto and add eagerPersistentConnectionEstablishment to config
+* [STREAM-15](https://inindca.atlassian.net/browse/STREAM-15) - Move to modern modern Jest timers by telling Jest to not fake `nextTick`
+
+# [v9.1.2](https://github.com/MyPureCloud/genesys-cloud-webrtc-sdk/compare/v9.1.1...v9.1.2)
+### Fixed
+* [STREAM-22](https://inindca.atlassian.net/browse/STREAM-22) - fix for unhandled exception thrown from RXJS `first` operator when there are no elements from the Observable
+* [STREAM-108](https://inindca.atlassian.net/browse/STREAM-108) - Update ws to address Snyk vulnerability
+
+# [v9.1.1](https://github.com/MyPureCloud/genesys-cloud-webrtc-sdk/compare/v9.1.0...v9.1.1)
+### Fixed
+* [STREAM-97](https://inindca.atlassian.net/browse/STREAM-97) - fix for pruning conversation events for logging when a session doesn't exist
+
+# [v9.1.0](https://github.com/MyPureCloud/genesys-cloud-webrtc-sdk/compare/v9.0.8...v9.1.0)
+### Fixed
+* [STREAM-73](https://inindca.atlassian.net/browse/STREAM-73) - fix for issue where Sennheiser/EPOS devices maintained a mute state when starting a new call
+* [STREAM-74](https://inindca.atlassian.net/browse/STREAM-73) - fix for issue where the WebHID permission modal popped up constantly for Jabra
+### Changed
+* [no-jira] Use default of `false` for `useServerSidePings`
+* [WEBRTCS-1106](https://inindca.atlassian.net/browse/WEBRTCS-1106) - bump streaming client for reinvite functionality
+* [STREAM-82](https://inindca.atlassian.net/browse/STREAM-82) - Updated lots of dependencies. For full list, see attached ticket.
+
+# [v9.0.8](https://github.com/MyPureCloud/genesys-cloud-webrtc-sdk/compare/v9.0.7...v9.0.8)
+### Changed
+* [PCM-2360](https://inindca.atlassian.net/browse/PCM-2360) - removed session object from certain logs to reduce size
+* [PCM-2352](https://inindca.atlassian.net/browse/PCM-2352) - Add option to control whether to use server-side pinging
+* [no-jira] Use default of `true` for `useServerSidePings`
+
+# [v9.0.7](https://github.com/MyPureCloud/genesys-cloud-webrtc-sdk/compare/v9.0.6...v9.0.7)
+### Changed
+* [no-jira] Update uuid to v9.0.1
+
+# [v9.0.6](https://github.com/MyPureCloud/genesys-cloud-webrtc-sdk/compare/v9.0.5...v9.0.6)
+### Added
+* [PCM-2345](https://inindca.atlassian.net/browse/PCM-2345) - Added ability to pass in custom headers for telemetry purposes (internal use only). Bumped streaming-client and client-logger.
+
+# [v9.0.5](https://github.com/MyPureCloud/genesys-cloud-webrtc-sdk/compare/v9.0.4...v9.0.5)
+### Added
+* [no-jira] Bump to `Softphone Vendor Headsets` to support two new vendors: VBeT and CyberAcoustics
+### Fixed
+* [no-jira] Removed check for persistent connection to allow orchestration rejection for active calls and idle persistent connection
+* [PCM-2319](https://inindca.atlassian.net/browse/PCM-2319) - move typescript to a dev dependency
+* [PCM-1826](https://inindca.atlassian.net/browse/PCM-1826) - Fixed screen sharing in safari
+
+# [v9.0.4](https://github.com/MyPureCloud/genesys-cloud-webrtc-sdk/compare/v9.0.3...v9.0.4)
+### Changed
+* [PCM-2312](https://inindca.atlassian.net/browse/PCM-2312) bump logger version
+
+# [v9.0.3](https://github.com/MyPureCloud/genesys-cloud-webrtc-sdk/compare/v9.0.1...v9.0.3)
+### Added
+* [PCM-2302](https://inindca.atlassian.net/browse/PCM-2302) Added queue for headset events to prevent issues brought on by race conditions between events
+### Changed
+* [PCM-2297](https://inindca.atlassian.net/browse/PCM-2297) Update genesys-cloud-client-logger and genesys-cloud-streaming-client to fix Snyk vulnerabilities.
+### Fixed
+* [PCM-2293](https://inindca.atlassian.net/browse/PCM-2293) - Fixed issue where multiple instances of the sdk caused conflict with poly/plantronics headsets
+* fix snyk vulnerabilities: axios and follow-redirects
+
+# [v9.0.1](https://github.com/MyPureCloud/genesys-cloud-webrtc-sdk/compare/v9.0.0...v9.0.1)
+* [PCM-2276](https://inindca.atlassian.net/browse/PCM-2276) - update streaming client for nrproxy changes
+
+# [v9.0.0](https://github.com/MyPureCloud/genesys-cloud-webrtc-sdk/compare/v8.2.4...v9.0.0)
+### BREAKING CHANGES
+* Only one sdk instance will be allowed to have headset controls at any given time. Headset functionality is now orchestrated and negotiated between other instances of the sdk based on various factors. As such, we have changed the DeviceConnectionStatus type in order to union those states with orchestration states.
+
+### Added
+* [PCM-2224](https://inindca.atlassian.net/browse/PCM-2224) - Added headset orchestration flow. Opt out with `config.disableHeadsetControlsOrchestration`, but this will be temporary and will be removed without notice.
+* [PCM-2250](https://inindca.atlassian.net/browse/PCM-2250) - Emit `sessionInterrupted` event when a session's `connectionState` becomes `interrupted`.
+* [PCM-2276](https://inindca.atlassian.net/browse/PCM-2276) - Added nr events for media actions and first alerting conversation update
+
+# [v8.2.4](https://github.com/MyPureCloud/genesys-cloud-webrtc-sdk/compare/v8.2.3...v8.2.4)
+* [PCM-2238](https://inindca.atlassian.net/browse/PCM-2238) - Bumped client logger to help with a fix for media helper
+
 # [v8.2.3](https://github.com/MyPureCloud/genesys-cloud-webrtc-sdk/compare/v8.2.2...v8.2.3)
 ### Fixed
 * [PCM-2232](https://inindca.atlassian.net/browse/PCM-2232) - Fixed unholding a call and the sdk tries to hold ended session on persistent connection

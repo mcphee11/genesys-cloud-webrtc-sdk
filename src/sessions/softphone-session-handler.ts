@@ -1,4 +1,4 @@
-import { pick, debounce, DebouncedFunc } from 'lodash';
+import { debounce, DebouncedFunc } from 'lodash';
 import { JingleReason } from 'stanza/protocol';
 import { Constants } from 'stanza';
 
@@ -19,15 +19,17 @@ import {
 } from '../types/interfaces';
 import { SessionTypes, SdkErrorTypes, JingleReasons, CommunicationStates } from '../types/enums';
 import { attachAudioMedia, logDeviceChange, createUniqueAudioMediaElement } from '../media/media-utils';
-import { requestApi, isSoftphoneJid, createAndEmitSdkError } from '../utils';
+import { requestApi, isSoftphoneJid, createAndEmitSdkError, isPeerConnectionDisconnected } from '../utils';
+import { HeadsetChangesQueue } from '../headsets/headset-utils';
 import { ConversationUpdate } from '../conversations/conversation-update';
 import { GenesysCloudWebrtcSdk } from '..';
 import { SessionManager } from './session-manager';
-import { Session } from 'inspector';
+import { FirstAlertingConversationStat } from 'genesys-cloud-streaming-client';
+import { HeadsetProxyService } from '../headsets/headset';
 
 type SdkConversationEvents = 'added' | 'removed' | 'updated';
 
-export default class SoftphoneSessionHandler extends BaseSessionHandler {
+export class SoftphoneSessionHandler extends BaseSessionHandler {
   sessionType = SessionTypes.softphone;
   /* Could be active persistent connection or non concurrent session */
   activeSession?: IExtendedMediaSession;
@@ -105,11 +107,34 @@ export default class SoftphoneSessionHandler extends BaseSessionHandler {
   }
 
   async handlePropose (pendingSession: IPendingSession): Promise<void> {
-    await super.handlePropose(pendingSession);
+    const isPrivAnswerAuto = pendingSession.privAnswerMode === 'Auto';
+    const eagerConnectionEstablishmentMode = this.sdk._config.eagerPersistentConnectionEstablishment;
+    const logInfo = { sessionId: pendingSession?.id, conversationId: pendingSession.conversationId };
 
+    if (isPrivAnswerAuto) {
+      this.log('info', 'received a propose with privAnswerMode=true', logInfo);
+    }
+
+    // if eagerPersistentConnectionEstablishment==='none' then we want to completely swallow the propose
+    const shouldIgnorePrivAnswerPropose = isPrivAnswerAuto && eagerConnectionEstablishmentMode === 'none';
+    if (shouldIgnorePrivAnswerPropose) {
+      this.log('info', 'eagerPersistentConnectionEstablishment is "none" so propose with privAnswerMode=true will be ignored', logInfo);
+      return;
+    }
+
+    const shouldAutoAnswerPrivately = isPrivAnswerAuto && eagerConnectionEstablishmentMode === 'auto';
+
+    // we want to emit the pendingSession event in all cases except when eagerConnectionEstablishmentMode === auto and this is a privAnswerMode call
+    if (!shouldAutoAnswerPrivately) {
+      await super.handlePropose(pendingSession);
+    } else {
+      return await this.proceedWithSession(pendingSession);
+    }
+
+    // calls will can be marked as auto-answer or priv-answer-mode: Auto, but never both
     if (pendingSession.autoAnswer) {
       if (this.sdk._config.disableAutoAnswer) {
-        this.log('info', 'received and autoAnswer tagged propose but sdk has disableAutoAnswer.', { sessionId: pendingSession?.id, conversationId: pendingSession.conversationId });
+        this.log('info', 'received and autoAnswer tagged propose but sdk has disableAutoAnswer.', logInfo);
       } else {
         await this.proceedWithSession(pendingSession);
       }
@@ -166,6 +191,18 @@ export default class SoftphoneSessionHandler extends BaseSessionHandler {
       });
     }
 
+    /* These next couple of blocks will ensure that the headset device is set to the appropriate state */
+    /* It really should only matter for connected calls as ended calls should have the logic already in place in SVH */
+    if (this.isConnectedState(callState) && session) {
+      if (callState.muted !== previousCallState?.muted) {
+        HeadsetChangesQueue.queueHeadsetChanges(() => this.sdk.headset.setMute(callState.muted));
+      }
+
+      if (callState.held !== previousCallState?.held) {
+        HeadsetChangesQueue.queueHeadsetChanges(() => this.sdk.headset.setHold(conversationId, callState.held));
+      }
+    }
+
     const communicationStateChanged = previousCallState?.state !== callState.state;
     let eventToEmit: boolean | SdkConversationEvents = 'updated';
     const isOutbound = callState.direction === 'outbound'
@@ -178,9 +215,24 @@ export default class SoftphoneSessionHandler extends BaseSessionHandler {
 
         // headset actions will be tied to conversation updates rather than session events so we want to react regardless
         if (isOutbound) {
-          this.sdk.headset.outgoingCall({ conversationId });
+          HeadsetChangesQueue.queueHeadsetChanges(() => this.sdk.headset.outgoingCall({ conversationId }));
         } else {
-          this.sdk.headset.setRinging({ conversationId, contactName: null }, !!this.lastEmittedSdkConversationEvent.current.length);
+          const nrStat: FirstAlertingConversationStat = {
+            actionName: 'WebrtcStats',
+            details: {
+              _eventType: 'firstAlertingConversationUpdate',
+              _eventTimestamp: new Date().getTime(),
+              _appId: this.sdk.logger.clientId,
+              _appName: this.sdk.logger.config.appName,
+              _appVersion: this.sdk.VERSION,
+              conversationId,
+              participantId: participant.id,
+            }
+          };
+
+          this.sdk._streamingConnection._webrtcSessions.proxyNRStat(nrStat);
+
+          HeadsetChangesQueue.queueHeadsetChanges(() => this.sdk.headset.setRinging({ conversationId, contactName: null }, !!this.lastEmittedSdkConversationEvent.current.length));
         }
 
         /* only emit `pendingSession` if we already have an active session */
@@ -217,13 +269,16 @@ export default class SoftphoneSessionHandler extends BaseSessionHandler {
               ignoredConversation: this.conversations[conversationId],
               update
             });
+            if ((this.sdk.headset as HeadsetProxyService).orchestrationState === 'hasControls') {
+              this.sdk.headset.resetHeadsetStateForCall(conversationId);
+            }
             delete this.conversations[conversationId];
             return;
           }
 
           // if this was an inbound call, the headset needs to move from ringing to answered
           if (!isOutbound) {
-            this.sdk.headset.answerIncomingCall(conversationId, false);
+            HeadsetChangesQueue.queueHeadsetChanges(() => this.sdk.headset.answerIncomingCall(conversationId, false));
           }
 
           /* only emit `sessionStarted` if we have an active session */
@@ -247,6 +302,7 @@ export default class SoftphoneSessionHandler extends BaseSessionHandler {
           this.sdk.headset.endCurrentCall(conversationId);
         }
 
+        HeadsetChangesQueue.clearQueue();
         /* we don't want to emit events for (most of) these */
         eventToEmit = false;
         /* we rejected a pendingSession */
@@ -270,7 +326,10 @@ export default class SoftphoneSessionHandler extends BaseSessionHandler {
     }
 
     if (eventToEmit) {
-      this.log('debug', 'about to emit based on conversation event', { eventToEmit, update: this.conversations[conversationId], previousCallState, callState, sessionId: session?.id }, { skipServer: true });
+      const conversationUpdateForLogging = { ...this.conversations[conversationId] };
+      delete conversationUpdateForLogging.session;
+
+      this.log('debug', 'about to emit based on conversation event', { eventToEmit, update: conversationUpdateForLogging, previousCallState, callState, sessionId: session?.id }, { skipServer: true });
       this.emitConversationEvent(eventToEmit, this.conversations[conversationId], session);
     }
   }
@@ -327,10 +386,34 @@ export default class SoftphoneSessionHandler extends BaseSessionHandler {
 
     currentEmittedEvent.activeConversationId = this.determineActiveConversationId(session);
 
-    this.log('debug', 'emitting `conversationUpdate`', { event, previousEmittedEvent: this.lastEmittedSdkConversationEvent, currentEmittedEvent, sessionId: session?.id }, { skipServer: true });
+    const previousEventForLogging = this.pruneConversationUpdateForLogging(this.lastEmittedSdkConversationEvent);
+    const currentEventForLogging = this.pruneConversationUpdateForLogging(currentEmittedEvent);
+    this.log('debug', 'emitting `conversationUpdate`', { event, previousEmittedEvent: previousEventForLogging, currentEmittedEvent: currentEventForLogging, sessionId: session?.id }, { skipServer: true });
     this.lastEmittedSdkConversationEvent = currentEmittedEvent;
 
     this.sdk.emit('conversationUpdate', currentEmittedEvent);
+  }
+
+  private pruneConversationUpdateForLogging (update: ISdkConversationUpdateEvent): ISdkConversationUpdateEvent {
+    const replaceSessions = (conversationStates: IStoredConversationState[]) => {
+      return conversationStates.map((conversationState: IStoredConversationState) => {
+        const conversationStateCopy = {
+          ...conversationState,
+          sessionId: conversationState.session?.id
+        }
+        delete conversationStateCopy.session;
+        return conversationStateCopy;
+      });
+    };
+
+    const updateForLogging = {
+      ...update,
+      added: replaceSessions(update.added),
+      removed: replaceSessions(update.removed),
+      current: replaceSessions(update.current)
+    }
+
+    return updateForLogging;
   }
 
   determineActiveConversationId (session?: IExtendedMediaSession): string {
@@ -474,7 +557,7 @@ export default class SoftphoneSessionHandler extends BaseSessionHandler {
 
         // if this fails, we don't want it to mess up anything up.
         this.forceEndSession(oldSession, JingleReasons.alternativeSession)
-          .catch(e => {
+          .catch(() => {
             this.log('warn', 'failed to force terminate the session that was replaced by a reinvite', oldSession);
           });
       }
@@ -489,7 +572,7 @@ export default class SoftphoneSessionHandler extends BaseSessionHandler {
     const lineAppearance1 = !this.sdk.isConcurrentSoftphoneSessionsEnabled();
 
     /* If LA>1, hold other active sessions in favor of the latest we're accepting. */
-    if (!lineAppearance1) {
+    if (!lineAppearance1 && !session.reinvite) {
       this.holdOtherSessions(session);
     }
     /* if we have an active non-concurrent session, we can drop this accept on the floor */
@@ -550,7 +633,10 @@ export default class SoftphoneSessionHandler extends BaseSessionHandler {
 
     /* make sure we store the session with the conversation state: this is used for LA > 1 _and_ for initial (ie. 1st) sessions */
     if (!this.conversations[session.conversationId]) {
-      this.conversations[session.conversationId] = { session } as any;
+      // we don't want to store the fake conversation when priv-answer-mode=true
+      if (session.privAnswerMode !== 'Auto') {
+        this.conversations[session.conversationId] = { session } as any;
+      }
     } else {
       this.conversations[session.conversationId].session = session;
     }
@@ -625,11 +711,11 @@ export default class SoftphoneSessionHandler extends BaseSessionHandler {
       const terminatedPromise = new Promise<JingleReason>((resolve) => {
         const listener = (endedSession: IExtendedMediaSession, reason: JingleReason) => {
           if (endedSession.id === session.id && endedSession.conversationId === conversationId) {
-            this.log('debug', 'received "sessionEnded" event from session requested by `sdk.endSession()`', { endedSession, conversationId, session}, { skipServer: true });
+            this.log('debug', 'received "sessionEnded" event from session requested by `sdk.endSession()`', { endedSessionId: endedSession.id, conversationId}, { skipServer: true });
             this.sdk.off('sessionEnded', listener);
             return resolve(reason);
           } else {
-            this.log('debug', 'received "sessionEnded" event from session that was NOT requested by `sdk.endSession()`', { endedSession, conversationId, session}, { skipServer: true});
+            this.log('debug', 'received "sessionEnded" event from session that was NOT requested by `sdk.endSession()`', { endedSessionId: endedSession.id, conversationId, sessionId: session.id}, { skipServer: true});
           }
         }
 
@@ -724,6 +810,11 @@ export default class SoftphoneSessionHandler extends BaseSessionHandler {
   }
 
   async setConversationHeld (session: IExtendedMediaSession, params: IConversationHeldRequest) {
+    if (isPeerConnectionDisconnected(session.peerConnection.connectionState)) {
+      this.log('warn', 'peerConnection is disconnected, canceling attempt to hold', { sessionId: session.id, conversationId: session.conversationId, sessionType: session.sessionType });
+      return;
+    }
+
     this.log('info', 'setting conversation "held" state', {
       conversationId: session.conversationId,
       sessionId: session.id,
@@ -763,7 +854,7 @@ export default class SoftphoneSessionHandler extends BaseSessionHandler {
     * connection that will attempt to hold the previous ended call
     */
     const otherSessions = sessions.filter(session => {
-      return session.sessionType === SessionTypes.softphone && 
+      return session.sessionType === SessionTypes.softphone &&
         this.conversations[session.conversationId] &&
         !this.isConversationHeld(session.conversationId) &&
         session !== currentSession;
@@ -777,7 +868,7 @@ export default class SoftphoneSessionHandler extends BaseSessionHandler {
   }
 
   isConversationHeld(conversationId: string): boolean {
-    return !!this.conversations[conversationId]?.mostRecentCallState.held;
+    return !!this.conversations[conversationId]?.mostRecentCallState?.held;
   }
 
   // since softphone sessions will *never* have video, we set the videoDeviceId to undefined so we don't spin up the camera
@@ -818,3 +909,5 @@ export default class SoftphoneSessionHandler extends BaseSessionHandler {
     return call?.state === CommunicationStates.disconnected || call?.state === CommunicationStates.terminated;
   }
 }
+
+export default SoftphoneSessionHandler;

@@ -1,5 +1,5 @@
 import nock from 'nock';
-import uuid from 'uuid';
+import { v4 as uuidv4 } from 'uuid';
 
 import { SimpleMockSdk, MockSession, MockStream, MockTrack, random } from '../../test-utils';
 import { GenesysCloudWebrtcSdk } from '../../../src/client';
@@ -8,9 +8,9 @@ import BaseSessionHandler from '../../../src/sessions/base-session-handler';
 import { SessionTypes, CommunicationStates, SdkErrorTypes } from '../../../src/types/enums';
 import * as mediaUtils from '../../../src/media/media-utils';
 import * as utils from '../../../src/utils';
-import { IParticipantsUpdate, IExtendedMediaSession, IConversationParticipant, VideoMediaSession } from '../../../src/types/interfaces';
+import { IParticipantsUpdate, IExtendedMediaSession, IConversationParticipant, VideoMediaSession, MemberStatusMessage } from '../../../src/types/interfaces';
 import VideoSessionHandler, { IMediaChangeEvent } from '../../../src/sessions/video-session-handler';
-import { ConversationUpdate, IMemberStatusMessage } from '../../../src/';
+import { ConversationUpdate, GenesysDataChannelMessageParams } from '../../../src/';
 import { JsonRpcMessage } from 'genesys-cloud-streaming-client';
 
 let handler: VideoSessionHandler;
@@ -1389,10 +1389,10 @@ describe('pinParticipantVideo', () => {
       address: null as any,
       confined: null as any,
       direction: null as any,
-      id: uuid(),
+      id: uuidv4(),
       state: CommunicationStates.connected,
       purpose: 'user',
-      userId: uuid(),
+      userId: uuidv4(),
       muted: false,
       videoMuted: false
     };
@@ -1493,7 +1493,7 @@ describe('handleDataChannelMessage', () => {
   it('should call handleMemberStatusMessage', () => {
     const spy = handler.handleMemberStatusMessage = jest.fn();
 
-    const message: IMemberStatusMessage = {
+    const message: JsonRpcMessage = {
       jsonrpc: 'v2',
       method: 'member.notify.status',
       params: {
@@ -1529,7 +1529,7 @@ describe('handleMemberStatusMessage', () => {
       emit: jest.fn()
     };
     const spy = session.emit = jest.fn();
-    const message: IMemberStatusMessage = {
+    const message: MemberStatusMessage = {
       jsonrpc: 'v2',
       method: 'member.notify.status',
       params: {

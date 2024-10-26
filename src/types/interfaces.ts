@@ -1,5 +1,5 @@
 /* eslint-disable-line @typescript-eslint/no-explicit-any */
-import { GenesysCloudMediaSession, ISessionInfo, IPendingSession, JsonRpcMessage, IMediaSession } from 'genesys-cloud-streaming-client';
+import { ISessionInfo, IPendingSession, IMediaSession, TypedJsonRpcMessage } from 'genesys-cloud-streaming-client';
 import { JingleReason } from 'stanza/protocol';
 import { Constants } from 'stanza';
 import ILogger, { LogFormatterFn } from 'genesys-cloud-client-logger';
@@ -17,16 +17,16 @@ declare module 'genesys-cloud-streaming-client' {
     speakersUpdate: ISpeakersUpdate;
     incomingMedia: void;
     pinnedParticipant: { participantId: string | null };
-    memberStatusUpdate: IMemberStatusMessage;
+    memberStatusUpdate: MemberStatusMessage;
   }
 }
 
 export type KeyFrom<T extends { [key: string]: any }, key extends keyof T> = key;
 
 /**
- * SDK configuration options for construction a new instance
+ * SDK configuration options for constructing a new instance
  */
-export interface ISdkConfig {
+export interface ISdkFullConfig {
   /**
    * Domain to use.
    *
@@ -106,6 +106,24 @@ export interface ISdkConfig {
   disableAutoAnswer?: boolean;
 
   /**
+   * If the station is configured for persistent connection and an active connection is required to go on queue, 
+   * a "fake" call will be used to establish the persistent connection as part of the process to go on queue.
+   * This setting is additional configuration for how the webrtc sdk handles this circumstance but
+   * only comes into play if `disableAutoAnswer` is `true`. If `disableAutoAnswer` is `false`, `eagerPersistentConnectionEstablishment`
+   * will always be `'auto'`.
+   * 
+   * Options:
+   * ``` ts
+   * 'auto': will automatically establish the connection upon receiving the fake call without emitting a `pendingSession` event.
+   * 'event': will emit a pendingSession event and allow the application to decide if it will establish the connection
+   * 'none': will not emit an event and will not establish the persistent connection
+   * ```
+   * 
+   * Defaults to `'auto'`
+   */
+  eagerPersistentConnectionEstablishment?: 'auto' | 'event' | 'none';
+
+  /**
    * Desired log level.
    * Available options:
    * ``` ts
@@ -181,6 +199,18 @@ export interface ISdkConfig {
   useHeadsets?: boolean;
 
   /**
+   * When the sdk initializes, it will negotiate with other sdk instances to determine which will
+   * get call controls. The instance that is instantiated last and with the highest priority
+   * will be the one that gets call controls.
+   *
+   * Note: There is a third type called 'mediaHelper' which is set by the sdk at runtime if it
+   * is running as a media helper.
+   *
+   * Optional: default `standard`
+   */
+  headsetRequestType?: HeadsetRequestType;
+
+  /**
    * Allowed session types the sdk instance should handle.
    *  Only session types listed here will be handled.
    * Available options passed in as an array:
@@ -205,6 +235,29 @@ export interface ISdkConfig {
    * Optional: defaults to all session types.
    */
   allowedSessionTypes?: SessionTypes[];
+
+  /**
+   * disables the negotiation between the user's different client which ensures
+   * that only one client effectively has headset call controls. This flag will
+   * be temporary and may be removed without notice.
+   *
+   * Optional: defaults to `false`
+   */
+  disableHeadsetControlsOrchestration?: boolean;
+
+  /**
+   * Genesys internal use only - non-Genesys apps that pass in custom headers will be ignored.
+   * Used for telemetry purposes only.
+  */
+  customHeaders?: ICustomHeader;
+
+  /**
+   * Controls whether to attempt to use `ping` stanzas from the server or the client.
+   * When `true`, `ping` stanzas from the server will be requested. If `false` (or unsupported by the server), the client will send `ping` stanzas.
+   *
+   * Optional: default `true`
+   */
+  useServerSidePings?: boolean;
 
   /** defaults for various SDK functionality */
   defaults?: {
@@ -368,6 +421,10 @@ export interface ISdkConfig {
      */
     monitorMicVolume?: boolean;
   };
+}
+
+export interface ISdkConfig extends ISdkFullConfig{
+  headsetRequestType?: DefaultHeadsetRequestType;
 }
 
 /**
@@ -955,6 +1012,7 @@ export interface SdkEvents {
   pendingSession: IPendingSession;
   sessionStarted: IExtendedMediaSession;
   sessionEnded: (session: IExtendedMediaSession, reason: JingleReason) => void;
+  sessionInterrupted: (event) => { sessionId: string, sessionType: string, conversationId: string };
   handledPendingSession: ISessionIdAndConversationId;
   cancelPendingSession: ISessionIdAndConversationId;
   conversationUpdate: ISdkConversationUpdateEvent;
@@ -1166,15 +1224,18 @@ export interface IVideoResolution {
   height: ConstrainULong
 }
 
-export interface IMemberStatusMessage extends JsonRpcMessage {
-  method: 'member.notify.status';
-  params: {
-      speakers?: VideoSpeakerStatus[];
-      outgoingStreams?: OutgoingStreamStatus[];
-      incomingStreams?: IncomingStreamStatus[];
-      bandwidthAndRates?: IDataChannelBandwidthAndRates;
-  };
-}
+export type GenesysDataChannelMessageParams = {
+  'member.notify.status': NotifyStatusParams;
+};
+
+export type NotifyStatusParams = {
+  speakers?: VideoSpeakerStatus[];
+  outgoingStreams?: OutgoingStreamStatus[];
+  incomingStreams?: IncomingStreamStatus[];
+  bandwidthAndRates?: IDataChannelBandwidthAndRates;
+};
+
+export type MemberStatusMessage = TypedJsonRpcMessage<'member.notify.status', NotifyStatusParams>;
 
 export interface VideoSpeakerStatus {
   /** memberId of the conference member. */
@@ -1247,3 +1308,10 @@ export interface IDataChannelBandwidthAndRates {
   /** data rate, in bits per second, of the streams being sent from the client to mms */
   rateFromClient: number;
 }
+
+export interface ICustomHeader {
+  [header: string]: string;
+}
+
+export type DefaultHeadsetRequestType = 'prioritized' | 'standard';
+export type HeadsetRequestType = 'mediaHelper' | DefaultHeadsetRequestType;

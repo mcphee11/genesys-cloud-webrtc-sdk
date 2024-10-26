@@ -6,7 +6,7 @@ import { GenesysCloudWebrtcSdk } from '../client';
 import { LogLevels, SessionTypes, SdkErrorTypes } from '../types/enums';
 import { SessionManager } from './session-manager';
 import { checkHasTransceiverFunctionality, logDeviceChange } from '../media/media-utils';
-import { createAndEmitSdkError, requestApi } from '../utils';
+import { createAndEmitSdkError, delay, requestApi } from '../utils';
 import { ConversationUpdate } from '../conversations/conversation-update';
 import {
   IPendingSession,
@@ -82,7 +82,7 @@ export default abstract class BaseSessionHandler {
     }
 
     try {
-      this.log('info', 'handling session init', { sessionId: session.id, conversationId: session.conversationId, sessionType: session.sessionType });
+      this.log('info', 'received webrtc session', { sessionId: session.id, conversationId: session.conversationId, sessionType: session.sessionType });
     } catch (e) {
       // don't let log errors ruin a session
     }
@@ -97,6 +97,10 @@ export default abstract class BaseSessionHandler {
 
     session.on('connectionState' as any, (state: string) => {
       this.log('info', 'connection state change', { state, conversationId: session.conversationId, sid: session.id, sessionType: session.sessionType });
+      /* Emit sessionInterrupted when the connection is interrupted so that consuming apps can inform users (e.g. Volt). */
+      if (state === 'interrupted') {
+        this.sdk.emit('sessionInterrupted', { sessionId: session.id, sessionType: session.sessionType, conversationId: session.conversationId });
+      }
     });
 
     session.on('terminated', this.onSessionTerminated.bind(this, session));
@@ -109,7 +113,7 @@ export default abstract class BaseSessionHandler {
 
     /**
    * This is somewhat of a hack unfortunately. If the peer connection dies while the computer is sleeping, the peer connection
-   * does not send connection updates so the session has no idea the session is dead. We do get a visibility change event 
+   * does not send connection updates so the session has no idea the session is dead. We do get a visibility change event
    * however, so we can use that as a manual queue to check the state of the peer connection and clean it up if needed.
    */
   private handleVisibilityChange (session: IExtendedMediaSession) {
@@ -171,7 +175,7 @@ export default abstract class BaseSessionHandler {
     this.log('info', 'ending session', { sessionId: session.id, sessionConversationId: session.conversationId, reason, sessionType: session.sessionType });
 
     return new Promise<void>((resolve) => {
-      session.once('terminated', (reason) => {
+      session.once('terminated', () => {
         resolve();
       });
       return session.end(reason);
@@ -511,7 +515,26 @@ export default abstract class BaseSessionHandler {
       return;
     }
 
+    return this.applyTrackConstraints(sender);
+  }
+
+  // we want to apply track constraints but in safari specifically for screen share streams the settings don't immediately populate
+  // if the settings have a zero height or width, we will wait and retry one time. If the settings are still zeroed we will just give up
+  private async applyTrackConstraints (sender: RTCRtpSender, attempt = 1): Promise<void> {
     const { height, width, frameRate } = sender.track.getSettings();
+
+    if (!height || !width) {
+      if (attempt > 1) {
+        this.log('debug', 'Not applying video track constraints due to zero height or width track setting', { height, width });
+        return;
+      }
+
+      this.log('debug', 'Zero height or width track setting, will retry after wait time', { height, width });
+      await delay(300);
+      return this.applyTrackConstraints(sender, attempt + 1);
+    }
+
+    this.log('debug', 'Applying video track constraints from settings', { height, width });
     await sender.track.applyConstraints({
       width: {
         ideal: width
